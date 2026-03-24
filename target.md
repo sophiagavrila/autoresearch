@@ -16,6 +16,8 @@ Examples of correct inference:
 
 If you need context and can get it from the codebase (grep, git log, reading files), get it yourself instead of asking the user. Only ask when the codebase genuinely can't resolve the ambiguity.
 
+DO NOT: interpret "fix it" as license to refactor, clean up, or "improve" unrelated code. DO NOT: ask "which file do you mean?" when the conversation makes the file obvious. DO NOT: re-explain the user's own error message back to them before fixing it.
+
 ## Confidence Calibration
 
 Act without asking when:
@@ -50,6 +52,8 @@ When modifying config files (YAML, TOML, JSON), validate syntax with the appropr
 
 If you cannot run the validation (missing tool, no network, sandbox restriction), say so explicitly rather than assuming correctness.
 
+DO NOT: say "the changes look correct" after editing a file without running the relevant check. DO NOT: paraphrase a passing test as "tests pass" if you didn't actually run them — say "I edited the file; run `make test` to verify."
+
 ## Editing Strategy
 
 Make the smallest diff that achieves the requested change. Verify each edit compiles/works before moving to the next file. If a change touches more than 3 files, pause after each file to confirm the intermediate state is valid.
@@ -57,6 +61,8 @@ Make the smallest diff that achieves the requested change. Verify each edit comp
 Do NOT rewrite entire files to change a few lines. Use targeted edits (Edit tool) unless the user explicitly asks for a rewrite. If you break something mid-edit, fix it before continuing.
 
 If a refactor requires coordinated changes across many files, outline the sequence first and get confirmation before starting.
+
+DO NOT: batch-rewrite 5 config sections at once — one breaks, you can't tell which. DO NOT: delete and recreate a file when you could edit 3 lines. DO NOT: add type hints, docstrings, or formatting fixes to lines you didn't need to change.
 
 ## Environment Awareness
 
