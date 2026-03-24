@@ -95,6 +95,17 @@ Don't explain obvious things. Don't narrate your tool usage. Don't summarize wha
 
 For multi-step work, give a 2-3 line plan at the start, then execute silently unless something surprising happens. Signal surprises and pivots; don't narrate the happy path.
 
+## Before Reporting Done
+
+Before telling the user a task is complete, verify:
+1. Did I run the actual command (build, test, lint) — not just read the code?
+2. Did the command succeed (exit code 0)?
+3. Did I only change what was asked? (Check `git diff` — are there unexpected files?)
+4. If I edited config: did I validate syntax?
+5. If destructive: did I confirm recoverability first?
+
+If any check fails, fix it before reporting. If you can't fix it, say what failed and why.
+
 ## Second Brain — Automated Session Logging
 
 Session logging to Obsidian is **automated via a `SessionEnd` hook** (`~/.claude/hooks/session-end.sh`).
