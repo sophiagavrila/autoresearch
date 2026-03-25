@@ -1,0 +1,90 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/karpathy/autoresearch.git
+          git fetch upstream master
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          BEHIND=$(git rev-list HEAD..upstream/master --count)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "Already up to date with upstream."
+          else
+            echo "Behind upstream by $BEHIND commit(s)."
+          fi
+
+      - name: Merge upstream into main
+        if: steps.check.outputs.behind != '0'
+        id: merge
+        run: |
+          git merge upstream/master \
+            --no-edit \
+            -m "chore: sync upstream karpathy/autoresearch"
+        continue-on-error: true
+
+      - name: Push if merge was clean
+        if: steps.check.outputs.behind != '0' && steps.merge.outcome == 'success'
+        run: git push origin main
+
+      - name: Open issue if merge had conflicts
+        if: steps.check.outputs.behind != '0' && steps.merge.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEHIND: ${{ steps.check.outputs.behind }}
+        run: |
+          git merge --abort
+          UPSTREAM_SHA=$(git rev-parse upstream/master)
+          gh issue create \
+            --title "Upstream sync conflict — manual merge needed" \
+            --body "$(cat <<BODY
+          Automated upstream sync failed due to merge conflicts.
+
+          **Upstream**: \`karpathy/autoresearch\` (master)
+          **Behind by**: ${BEHIND} commit(s)
+          **Upstream HEAD**: \`${UPSTREAM_SHA}\`
+
+          ### To resolve manually
+
+          \`\`\`bash
+          git fetch upstream master
+          git merge upstream/master
+          # resolve conflicts — keep metaresearch files, accept upstream changes elsewhere
+          git push origin main
+          \`\`\`
+
+          ### Files likely to conflict
+
+          Only \`.gitignore\` is modified from upstream on main. All metaresearch files
+          (\`metaresearch.py\`, \`metaresearch_program.md\`, \`metric.py\`, \`eval.py\`) are
+          new files that don't exist upstream, so they should never conflict unless
+          upstream adds identically-named files.
+          BODY
+          )" \
+            --label "sync"
