@@ -2,7 +2,7 @@
 
 ![teaser](progress.png)
 
-> **This is a fork of [@karpathy's autoresearch](https://github.com/karpathy/autoresearch).** The original repo lets an AI agent autonomously optimize LLM training code overnight. This fork adds **Phase 2: metaresearch** — a system that turns vague, subjective goals (like "make my PR reviews find real bugs") into **proven evaluation metrics**, no GPU required. Both phases use the same core loop: modify code, run, measure, keep or discard, repeat forever.
+> **This is a fork of [@karpathy's autoresearch](https://github.com/karpathy/autoresearch).** The original repo lets an AI agent autonomously optimize LLM training code overnight. This fork adds **Phase 1: metaresearch** — a system that turns vague, subjective goals (like "make my PR reviews find real bugs") into **proven evaluation metrics**, no GPU required. Metaresearch runs first to discover *what "better" means*, then autoresearch (Phase 2) can optimize against that metric. Both phases use the same core loop: modify code, run, measure, keep or discard, repeat forever.
 
 ---
 
@@ -32,24 +32,24 @@ You give an AI agent a goal. It runs experiments autonomously while you sleep. Y
 There are **two phases** — pick the one that matches your problem:
 
 ```
-    PHASE 1: autoresearch                    PHASE 2: metaresearch
-    ─────────────────────                    ──────────────────────
-    "Make a better model"                    "Make my X better"
-                                             (when you can't define
-                                              what 'better' means)
+    PHASE 1: metaresearch                    PHASE 2: autoresearch
+    ──────────────────────                   ─────────────────────
+    "Make my X better"                       "Make a better model"
+    (when you can't define                   (or optimize any artifact
+     what 'better' means)                     against a known metric)
 
-    Agent edits: train.py                    Agent edits: metric.py
-    Metric:      val_bpb (lower=better)      Metric:      concordance (higher=better)
-    Needs:       NVIDIA GPU                  Needs:       LLM API key (or Claude Code)
-    Speed:       ~12 experiments/hour        Speed:       ~100+ experiments/hour
-    Output:      Better LLM training code    Output:      A proven score() function
+    Agent edits: metric.py                   Agent edits: train.py
+    Metric:      concordance (higher=better) Metric:      val_bpb (lower=better)
+    Needs:       LLM API key (or Claude Code)Needs:       NVIDIA GPU
+    Speed:       ~100+ experiments/hour      Speed:       ~12 experiments/hour
+    Output:      A proven score() function   Output:      Better LLM training code
 ```
 
-**Phase 2 feeds Phase 1.** Once metaresearch discovers a metric for your subjective goal, autoresearch can use that metric to optimize any text artifact against it.
+**Phase 1 feeds Phase 2.** Metaresearch discovers what "better" means (the metric). Then autoresearch optimizes against that metric.
 
 ---
 
-## How Phase 2 (metaresearch) works
+## How Phase 1 (metaresearch) works
 
 This is the new part. Here's what happens step by step:
 
@@ -91,7 +91,7 @@ This is the new part. Here's what happens step by step:
     │   DELIVERABLE: metric.py with a proven score() function                  │
     │   score(artifact, goal, llm) -> float  (0.0 = bad, 1.0 = perfect)       │
     │                                                                          │
-    │   Use it in CI, evals, or pipe it into Phase 1 to optimize artifacts.   │
+    │   Use it in CI, evals, or pipe it into Phase 2 to optimize artifacts.   │
     │                                                                          │
     └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -101,7 +101,7 @@ This is the new part. Here's what happens step by step:
 
 ---
 
-## Quick start: metaresearch (Phase 2)
+## Quick start: metaresearch (Phase 1)
 
 No GPU required. Just an LLM.
 
@@ -219,7 +219,7 @@ uv run eval.py my-error-messages.md --goal "Make my API error messages more help
 
 ---
 
-## Quick start: autoresearch (Phase 1)
+## Quick start: autoresearch (Phase 2)
 
 > This is the original Karpathy autoresearch — LLM training optimization on a GPU.
 
@@ -252,17 +252,17 @@ The agent reads `program.md`, creates a branch, runs experiments autonomously (~
 ## Project structure
 
 ```
-autoresearch (Phase 1 — GPU model training)
-├── prepare.py              Fixed: data prep, tokenizer, evaluation (do not modify)
-├── train.py                Agent modifies: model architecture, optimizer, training loop
-├── program.md              Human edits: agent instructions for Phase 1
-
-metaresearch (Phase 2 — metric discovery)
+metaresearch (Phase 1 — metric discovery, runs first)
 ├── metaresearch.py         Fixed: LLM client, calibration pairs, concordance eval (do not modify)
 ├── metric.py               Agent modifies: rubric, prompt, scoring logic
-├── metaresearch_program.md Human edits: agent instructions for Phase 2
+├── metaresearch_program.md Human edits: agent instructions for Phase 1
 ├── eval.py                 Score any artifact with the proven metric
 ├── calibration_pairs.yaml  Auto-generated, cached calibration pairs
+
+autoresearch (Phase 2 — GPU model training, or optimize against proven metric)
+├── prepare.py              Fixed: data prep, tokenizer, evaluation (do not modify)
+├── train.py                Agent modifies: model architecture, optimizer, training loop
+├── program.md              Human edits: agent instructions for Phase 2
 
 shared
 ├── CLAUDE.md               Agent guidance for Claude Code
@@ -273,7 +273,7 @@ shared
 
 ---
 
-## How it works (Phase 1 — original autoresearch)
+## How it works (Phase 2 — original autoresearch)
 
 The repo is deliberately kept small and only really has three files that matter:
 
@@ -287,16 +287,16 @@ If you are new to neural networks, this ["Dummy's Guide"](https://x.com/hooeem/s
 
 ## Design choices
 
-- **Single file to modify.** The agent only touches `train.py` (Phase 1) or `metric.py` (Phase 2). This keeps the scope manageable and diffs reviewable.
-- **Fixed time budget.** Phase 1 training always runs for exactly 5 minutes, regardless of your specific platform. This means you can expect approx 12 experiments/hour and approx 100 experiments while you sleep. There are two upsides of this design decision. First, this makes experiments directly comparable regardless of what the agent changes (model size, batch size, architecture, etc). Second, this means that autoresearch will find the most optimal model for your platform in that time budget. The downside is that your runs (and results) become not comparable to other people running on other compute platforms.
+- **Single file to modify.** The agent only touches `metric.py` (Phase 1) or `train.py` (Phase 2). This keeps the scope manageable and diffs reviewable.
+- **Fixed time budget.** Phase 2 training always runs for exactly 5 minutes, regardless of your specific platform. This means you can expect approx 12 experiments/hour and approx 100 experiments while you sleep. There are two upsides of this design decision. First, this makes experiments directly comparable regardless of what the agent changes (model size, batch size, architecture, etc). Second, this means that autoresearch will find the most optimal model for your platform in that time budget. The downside is that your runs (and results) become not comparable to other people running on other compute platforms.
 - **Self-contained.** No external dependencies beyond PyTorch and a few small packages. No distributed training, no complex configs. One GPU, one file, one metric.
-- **Two phases compose.** Phase 2 (metaresearch) discovers the metric. Phase 1 (autoresearch) optimizes against it. Together, they handle even subjective goals end-to-end.
+- **Two phases compose.** Phase 1 (metaresearch) discovers the metric. Phase 2 (autoresearch) optimizes against it. Together, they handle even subjective goals end-to-end.
 
 ## Platform support
 
-Phase 1 (autoresearch) currently requires a single NVIDIA GPU. In principle it is quite possible to support CPU, MPS and other platforms but this would also bloat the code. People can reference (or have their agents reference) the full/parent nanochat repository that has wider platform support and shows the various solutions (e.g. a Flash Attention 3 kernels fallback implementation, generic device support, autodetection, etc.), feel free to create forks or discussions for other platforms and I'm happy to link to them here in the README in some new notable forks section or etc.
+Phase 2 (autoresearch) currently requires a single NVIDIA GPU. In principle it is quite possible to support CPU, MPS and other platforms but this would also bloat the code. People can reference (or have their agents reference) the full/parent nanochat repository that has wider platform support and shows the various solutions (e.g. a Flash Attention 3 kernels fallback implementation, generic device support, autodetection, etc.), feel free to create forks or discussions for other platforms and I'm happy to link to them here in the README in some new notable forks section or etc.
 
-**Phase 2 (metaresearch) runs anywhere** — it only needs an LLM API key or the Claude Code CLI. No GPU required.
+**Phase 1 (metaresearch) runs anywhere** — it only needs an LLM API key or the Claude Code CLI. No GPU required.
 
 Seeing as there seems to be a lot of interest in tinkering with autoresearch on much smaller compute platforms than an H100, a few extra words. If you're going to try running autoresearch on smaller computers (Macbooks etc.), I'd recommend one of the forks below. On top of this, here are some recommendations for how to tune the defaults for much smaller models for aspiring forks:
 
