@@ -19,5 +19,11 @@ AGENTS.md
 # Experimental code/artifacts
 dev/
 
-# Results file
+# Results files
 results.tsv
+results_phase2.tsv
+
+# Metaresearch artifacts
+calibration_pairs.yaml
+run.log
+target.md
