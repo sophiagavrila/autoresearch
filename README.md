@@ -10,40 +10,20 @@
 
 You give an AI agent a goal. It runs experiments autonomously while you sleep. You wake up to results.
 
-```
-                    ┌──────────────────────────────────────────────────────────┐
-                    │              THE AUTORESEARCH LOOP                       │
-                    │                                                          │
-                    │    ┌─────────┐    ┌─────────┐    ┌──────────────┐        │
-                    │    │ Modify  │───>│  Run    │───>│   Measure    │        │
-                    │    │  code   │    │ experiment   │   metric     │        │
-                    │    └─────────┘    └─────────┘    └──────┬───────┘        │
-                    │         ^                               │                │
-                    │         │         ┌──────────┐          │                │
-                    │         │    NO   │  Better  │   YES    │                │
-                    │         └─────────┤  than    │<─────────┘                │
-                    │        git reset  │  before? │  git keep                 │
-                    │                   └──────────┘                           │
-                    │                                                          │
-                    │              Repeat forever.                             │
-                    └──────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="diagrams/loop.png" alt="The Autoresearch Loop" width="700" />
+</p>
 
 There are **two phases** — pick the one that matches your problem:
 
-```
-    PHASE 1: metaresearch                    PHASE 2: autoresearch
-    ──────────────────────                   ─────────────────────
-    "Make my X better"                       "Make a better model"
-    (when you can't define                   (or optimize any artifact
-     what 'better' means)                     against a known metric)
-
-    Agent edits: metric.py                   Agent edits: train.py
-    Metric:      concordance (higher=better) Metric:      val_bpb (lower=better)
-    Needs:       LLM API key (or Claude Code)Needs:       NVIDIA GPU
-    Speed:       ~100+ experiments/hour      Speed:       ~12 experiments/hour
-    Output:      A proven score() function   Output:      Better LLM training code
-```
+| | **Phase 1: metaresearch** | **Phase 2: autoresearch** |
+|---|---|---|
+| **Goal** | "Make my X better" (when you can't define what "better" means) | "Make a better model" (or optimize any artifact against a known metric) |
+| **Agent edits** | `metric.py` | `train.py` |
+| **Metric** | concordance (higher = better) | val_bpb (lower = better) |
+| **Needs** | LLM API key or Claude Code | NVIDIA GPU |
+| **Speed** | ~100+ experiments/hour | ~12 experiments/hour |
+| **Output** | A proven `score()` function | Better LLM training code |
 
 **Phase 1 feeds Phase 2.** Metaresearch discovers what "better" means (the metric). Then autoresearch optimizes against that metric.
 
@@ -51,50 +31,19 @@ There are **two phases** — pick the one that matches your problem:
 
 ## How Phase 1 (metaresearch) works
 
-This is the new part. Here's what happens step by step:
+This is the new part. Here's the full pipeline from goal to optimized artifact:
 
-```
-    ┌──────────────────────────────────────────────────────────────────────────┐
-    │                                                                          │
-    │   YOU provide a goal string:                                             │
-    │   "Make my API error messages more helpful for debugging"                │
-    │                                                                          │
-    │       │                                                                  │
-    │       v                                                                  │
-    │                                                                          │
-    │   STEP 1: Generate calibration pairs (automatic, one-time)               │
-    │   ┌────────────────────────────────────────────────────────────────┐      │
-    │   │ The LLM generates 8 pairs of "better" vs "worse" examples    │      │
-    │   │ that represent your goal. These are cached to disk.          │      │
-    │   │                                                              │      │
-    │   │  BETTER: "Error 403: Token expired at 14:23 UTC.            │      │
-    │   │          Refresh via POST /auth/token. See: docs/auth.md"   │      │
-    │   │                                                              │      │
-    │   │  WORSE:  "Error: forbidden"                                  │      │
-    │   └────────────────────────────────────────────────────────────────┘      │
-    │       │                                                                  │
-    │       v                                                                  │
-    │                                                                          │
-    │   STEP 2: The agent iterates on metric.py (runs autonomously)            │
-    │   ┌────────────────────────────────────────────────────────────────┐      │
-    │   │ Each iteration, the agent:                                   │      │
-    │   │  1. Tweaks the rubric, prompt, or scoring logic              │      │
-    │   │  2. Runs the metric against all 8 calibration pairs          │      │
-    │   │  3. Measures concordance (did the metric rank them right?)   │      │
-    │   │  4. Keeps improvements, discards regressions                 │      │
-    │   │                                                              │      │
-    │   │ Convergence target: concordance >= 0.9, avg_margin > 0.15   │      │
-    │   └────────────────────────────────────────────────────────────────┘      │
-    │       │                                                                  │
-    │       v                                                                  │
-    │                                                                          │
-    │   DELIVERABLE: metric.py with a proven score() function                  │
-    │   score(artifact, goal, llm) -> float  (0.0 = bad, 1.0 = perfect)       │
-    │                                                                          │
-    │   Use it in CI, evals, or pipe it into Phase 2 to optimize artifacts.   │
-    │                                                                          │
-    └──────────────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="diagrams/pipeline.png" alt="Phase 1 metaresearch to Phase 2 autoresearch pipeline" width="700" />
+</p>
+
+**How it works step by step:**
+
+1. **You provide a goal string** — e.g. "Make my API error messages more helpful for debugging"
+2. **Calibration pairs are generated automatically** — the LLM creates 8 pairs of "better" vs "worse" examples that represent your goal, then caches them to `calibration_pairs.yaml`
+3. **The agent iterates on `metric.py`** — each iteration it tweaks the rubric/prompt/scoring logic, runs the metric against all calibration pairs, and measures concordance (did it rank them right?)
+4. **When concordance >= 0.9 with avg_margin > 0.15**, the metric is proven — `metric.py` now contains a battle-tested `score(artifact, goal, llm) -> float` function
+5. **Use it** — in CI, evals, or feed it into Phase 2 (autoresearch) to optimize any text artifact against the metric
 
 **Concordance** = what fraction of calibration pairs the metric ranks correctly (1.0 = perfect).
 **avg_margin** = how decisively it separates "better" from "worse" (higher = more confident).
