@@ -1,62 +1,51 @@
 # Weekly Snippet Generator
 
-Generate my weekly snippet for the vuln-mgmt-eng team. Snippets are due by EoD Thursday.
+Generate my weekly snippet for the vuln-mgmt-eng team. Due EoD Thursday.
 
-## Execution Strategy
+## Execution (2 tool calls max)
 
-**Step 1 — Gather all data in ONE parallel round:**
-Run these 3 commands simultaneously (single message, 3 tool calls):
-1. `gh search prs --author=sophiagavrila --merged --sort=updated -- "merged:>=<last-friday-date>"` + `gh search prs --author=sophiagavrila --state=open --sort=updated -- "updated:>=<last-friday-date>"` + `gh search prs --reviewed-by=sophiagavrila --sort=updated -- "updated:>=<last-friday-date>"`
-2. `gh search issues --author=sophiagavrila --sort=updated -- "updated:>=<last-friday-date>"`
-3. QMD search: `mcp__qmd__search { collection: "second-brain", query: "session logs this week", limit: 15 }`
+**Single parallel round — 2 calls:**
+1. **All GitHub activity** (one Bash call with `&&`-chained commands):
+   ```bash
+   gh search prs --author=sophiagavrila --merged --sort=updated --json number,title,repository,url -- "merged:>=<last-friday>" && \
+   gh search prs --reviewed-by=sophiagavrila --sort=updated --json number,title,repository,url -- "updated:>=<last-friday>" && \
+   gh search issues --author=sophiagavrila --sort=updated --json number,title,repository,url -- "updated:>=<last-friday>"
+   ```
+2. **Session context**: `mcp__qmd__search { collection: "second-brain", query: "week session logs", limit: 10 }`
 
-Also check memory at `~/.claude/projects/-Users-sophiagavrila-Documents-workspace/memory/MEMORY.md` for active project state — but ONLY if you need to fill gaps the above queries didn't cover.
+Memory (`MEMORY.md`) only if gaps remain after the above.
 
-**Step 2 — Compose the snippet directly.** No intermediate summaries. No "here's what I found." Go straight to the output.
+**Then compose the snippet directly.** No preamble, no intermediate summaries.
 
-## Time Window
+## Rules
 
-All activity since **last Friday morning** (7 days back from today).
+- Time window: last Friday → today
+- **Shipped (🚢)** = I authored AND it merged. Reviews → "Supported" section.
+- **OKR progress first** in TL;DR and section ordering
+- **Link every claim** to a PR/issue URL
+- **Concise** — no filler, no unsupported statements
+- **@mentions** for collaboration shoutouts
+- Honest about WIPs
 
-Only count a PR as **shipped** (🚢) if I am the **author** AND it is **merged**.
+## Output (copy-paste ready, fenced code block)
 
-## Output Structure
-
-Present the full snippet in a fenced markdown code block (copy-paste ready):
-
-```
+```markdown
 ### TL;DR
-- Lead with OKR progress (SBOMs, VEX, active OKRs)
-- Then KTLO wins and security posture improvements
-- 2-3 sentences max
+2-3 sentences. OKR progress leads, then KTLO/security posture.
 
 ### <OKR Name> (OKR)
-- Ship-readiness of major PRs, refactor stats, test counts
-- Architectural decisions made
-- On-call context if juggling priorities
+Ship-readiness, refactor stats, test counts, architectural decisions.
 
-### Security Posture / Findings Cleanup
-- Quantify: "X findings close on Y ship, Z to tackle, then zero"
-- Vault deletions, exception filings, SAE coordination
+### Security Posture
+Quantify: "X close on Y ship, Z to tackle, then zero."
 
 ### KTLO & Misc
-- 🚢 Shipped items with PR links
-- Reviews with @mentions for teammate shoutouts
-- Investigations filed (SLA discrepancies, bugs)
+🚢 Shipped + links. Reviews with @mentions. Investigations filed.
 ```
-
-## Rules (non-negotiable)
-
-1. **OKR progress first** in TL;DR and section ordering
-2. **Only authored+merged = shipped** — reviews go under "Supported"
-3. **Link everything** — every claim backed by PR/issue URL
-4. **Concise** — no filler, no unsupported statements
-5. **Honest about WIPs** — "almost there", "iterating on feedback" is fine
-6. **@mentions** for collaboration shoutouts
 
 ## DO NOT
 
-- Make sequential queries that could be parallelized
-- Read files you don't need (don't grep the codebase, don't read READMEs)
-- Produce intermediate summaries before the final snippet
-- Narrate your process ("Let me search...", "Here's what I found...")
+- Run queries sequentially that can be parallelized or chained
+- Read files not needed for the snippet (no codebase grep, no READMEs)
+- Narrate your process or produce intermediate summaries
+- Over-fetch: 10 QMD results is enough, don't paginate or re-query
