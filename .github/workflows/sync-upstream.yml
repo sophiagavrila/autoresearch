@@ -2,8 +2,8 @@ name: Sync upstream
 
 on:
   schedule:
-    # Every Monday at 08:00 UTC
-    - cron: "0 8 * * 1"
+    # Every day at 06:00 UTC
+    - cron: "0 6 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -49,42 +49,120 @@ jobs:
             -m "chore: sync upstream karpathy/autoresearch"
         continue-on-error: true
 
-      - name: Push if merge was clean
-        if: steps.check.outputs.behind != '0' && steps.merge.outcome == 'success'
+      - name: Auto-resolve conflicts in custom files
+        if: steps.check.outputs.behind != '0' && steps.merge.outcome == 'failure'
+        id: resolve
+        run: |
+          # Files we've intentionally diverged from upstream — always keep ours
+          CUSTOM_FILES=(
+            README.md
+            .gitignore
+          )
+
+          CONFLICTED=$(git diff --name-only --diff-filter=U)
+          if [ -z "$CONFLICTED" ]; then
+            echo "No conflicted files found (unexpected). Aborting."
+            echo "resolved=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Conflicted files:"
+          echo "$CONFLICTED"
+
+          UNRESOLVABLE=""
+          for file in $CONFLICTED; do
+            IS_CUSTOM=false
+            for custom in "${CUSTOM_FILES[@]}"; do
+              if [ "$file" = "$custom" ]; then
+                IS_CUSTOM=true
+                break
+              fi
+            done
+
+            # Also auto-resolve any file under our custom directories
+            case "$file" in
+              .github/workflows/*|diagrams/*) IS_CUSTOM=true ;;
+            esac
+
+            if $IS_CUSTOM; then
+              echo "  ✓ Keeping ours: $file"
+              git checkout --ours "$file"
+              git add "$file"
+            else
+              echo "  ✗ Cannot auto-resolve: $file"
+              UNRESOLVABLE="$UNRESOLVABLE $file"
+            fi
+          done
+
+          if [ -n "$UNRESOLVABLE" ]; then
+            echo "resolved=false" >> "$GITHUB_OUTPUT"
+            echo "unresolvable=$UNRESOLVABLE" >> "$GITHUB_OUTPUT"
+            git merge --abort
+          else
+            git commit --no-edit -m "chore: sync upstream (auto-resolved custom file conflicts)"
+            echo "resolved=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push if merge succeeded
+        if: |
+          steps.check.outputs.behind != '0' && (
+            steps.merge.outcome == 'success' ||
+            steps.resolve.outputs.resolved == 'true'
+          )
         run: git push origin main
 
-      - name: Open issue if merge had conflicts
-        if: steps.check.outputs.behind != '0' && steps.merge.outcome == 'failure'
+      - name: Open issue if unresolvable conflicts remain
+        if: |
+          steps.check.outputs.behind != '0' &&
+          steps.merge.outcome == 'failure' &&
+          steps.resolve.outputs.resolved == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BEHIND: ${{ steps.check.outputs.behind }}
+          UNRESOLVABLE: ${{ steps.resolve.outputs.unresolvable }}
         run: |
-          git merge --abort
           UPSTREAM_SHA=$(git rev-parse upstream/master)
+
+          # Don't create duplicate issues
+          EXISTING=$(gh issue list --label "sync" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "Open sync issue #${EXISTING} already exists. Skipping."
+            exit 0
+          fi
+
           gh issue create \
             --title "Upstream sync conflict — manual merge needed" \
-            --body "$(cat <<BODY
-          Automated upstream sync failed due to merge conflicts.
+            --body "$(cat <<EOF
+          Automated upstream sync failed due to merge conflicts in upstream-owned files.
 
           **Upstream**: \`karpathy/autoresearch\` (master)
           **Behind by**: ${BEHIND} commit(s)
           **Upstream HEAD**: \`${UPSTREAM_SHA}\`
+
+          ### Conflicted files (could not auto-resolve)
+
+          \`\`\`
+          ${UNRESOLVABLE}
+          \`\`\`
+
+          These are files that exist in both upstream and our fork with divergent changes.
+          Custom-only files (README.md, .gitignore, diagrams/, workflows/) are auto-resolved
+          by keeping our version.
 
           ### To resolve manually
 
           \`\`\`bash
           git fetch upstream master
           git merge upstream/master
-          # resolve conflicts — keep metaresearch files, accept upstream changes elsewhere
+          # Resolve conflicts — keep metaresearch additions, accept upstream logic changes
           git push origin main
           \`\`\`
 
-          ### Files likely to conflict
+          ### Custom files (never conflict with upstream)
 
-          Only \`.gitignore\` is modified from upstream on main. All metaresearch files
-          (\`metaresearch.py\`, \`metaresearch_program.md\`, \`metric.py\`, \`eval.py\`) are
-          new files that don't exist upstream, so they should never conflict unless
-          upstream adds identically-named files.
-          BODY
+          These are new files that don't exist upstream:
+          \`metaresearch.py\`, \`metaresearch_program.md\`, \`metric.py\`, \`eval.py\`,
+          \`CLAUDE.md\`, \`target.md\`, \`diagrams/\`
+          EOF
           )" \
             --label "sync"
